@@ -449,6 +449,87 @@ vertexLmer <-
     return(out)
   }
 
+vertexLmer_wts <-
+  function(formula, data, mask=NULL, parallel=NULL,
+           REML=TRUE, column = 1, control=lmerControl(), start=NULL,
+           verbose=0L, safely = FALSE, summary_type = "fixef", weights = NULL) {
+    
+    mc <- mcout <- match.call()
+    mc[[1]] <- quote(lme4::lFormula)
+    
+    # remove lme4 unknown arguments, since lmer does not know about them and keeping them
+    # generates obscure warning messages
+    mc <- mc[!names(mc) %in% c("mask", "parallel", "safely", "summary_type")]
+    
+    lmod <- eval(mc, parent.frame(1L))
+    mincFileCheck(lmod$fr[,1])
+    if(!is.null(mask) & (!(is.character(mask) & length(mask) == 1)) & !is.numeric(mask))
+      stop("A numeric vector or file name must be supplied for the mask argument")
+    
+    # code ripped from lme4:::mkLmerDevFun
+    rho <- new.env(parent = parent.env(environment()))
+    rho$pp <- do.call(merPredD$new, c(lmod$reTrms[c("Zt", "theta",
+                                                    "Lambdat", "Lind")],
+                                      n = nrow(lmod$X), list(X = lmod$X)))
+    REMLpass <- if (REML)
+      ncol(lmod$X)
+    else 0L
+    
+    
+    mincLmerList <- list(lmod, mcout, control, start, verbose, rho, REMLpass)
+    
+    summary_fun <- summary_type
+    if(is.character(summary_type) && length(summary_type) == 1)
+      summary_fun <- switch(summary_type
+                            , fixef = fixef_summary
+                            , ranef = ranef_summary
+                            , both = effect_summary
+                            , anova = anova_summary
+                            , stop("invalid summary type specified"))
+    
+    if(!is.function(summary_fun))
+      stop("summary_type must be a string specifying a summary, or a function")
+    
+    
+    mincLmerOptimizeAndExtractSafely <-
+      function(x, mincLmerList, summary_fun){
+        tryCatch(mincLmerOptimizeAndExtract(x, mincLmerList, summary_fun),
+                 error = function(e){warning(e); return(NA)})
+      }
+    
+    optimizer_fun <-
+      `if`(safely, mincLmerOptimizeAndExtractSafely, mincLmerOptimizeAndExtract)
+    
+    out <- 
+      vertexApply(lmod$fr[,1]
+                  , optimizer_fun
+                  , mincLmerList = mincLmerList
+                  , mask = mask
+                  , column = column
+                  , summary_fun = summary_fun
+                  , parallel = parallel)
+    
+    ## Result post processing
+    out[is.infinite(out)] <- 0            #zero out infinite values produced by vcov
+    
+    # generate some random numbers for a single fit in order to extract some extra info
+    mmod <- mincLmerOptimize(rnorm(length(lmod$fr[,1])), mincLmerList)
+    
+    res_cols <- colnames(out)
+    attr(out, "stat-type") <- ## Handle all possible output types
+      check_stat_type(res_cols, summary_type)
+    
+    # get the DF for future logLik ratio tests; code from lme4:::npar.merMod
+    attr(out, "logLikDF") <- length(mmod@beta) + length(mmod@theta) + mmod@devcomp[["dims"]][["useSc"]]
+    attr(out, "REML") <- REML
+    attr(out, "mask") <- mask
+    attr(out, "data") <- data
+    attr(out, "mincLmerList") <- mincLmerList
+    class(out) <- c("vertexLmer", "mincLmer", "mincMultiDim", "matrix")
+    
+    return(out)
+  }
+
 #' Estimate the degrees of freedom for parameters in a vertexLmer model
 #'
 #' There is much uncertainty in how to compute p-values for mixed-effects
