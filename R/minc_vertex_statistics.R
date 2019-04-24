@@ -449,6 +449,26 @@ vertexLmer <-
     return(out)
   }
 
+#' Vertex Mixed Effects Models
+#' 
+#' Perform linear mixed effects model fitting for vertex data.
+#' vertexLmer should be used the same way as a straight lmer call, except
+#' that the left hand side of the equation contains vertex filenames rather than
+#' an actual response variable.
+#' 
+#' @inheritParams mincLmer
+#' @param column Which column to treat as the input from vertex files. 
+#' @details \code{vertexLmer_wts}, like its relative \link{mincLmer} provides an interface to running 
+#' linear mixed effects models at every vertex. Unlike standard linear models testing hypotheses 
+#' in linear mixed effects models is more difficult, since the denominator degrees of freedom are 
+#' more difficult to  determine. RMINC provides estimating degrees of freedom using the
+#' \code{\link{vertexLmerEstimateDF}} function. For the most likely models - longitudinal
+#' models with a separate intercept or separate intercept and slope per subject - this
+#' approximation is likely correct. Be careful in using this approximation if
+#' using more complicated random effects structures.
+#'
+#' @seealso \code{\link{lmer}} for description of lmer and lmer formulas; \code{\link{mincLm}}
+#' @export
 vertexLmer_wts <-
   function(formula, data, mask=NULL, parallel=NULL,
            REML=TRUE, column = 1, control=lmerControl(), start=NULL,
