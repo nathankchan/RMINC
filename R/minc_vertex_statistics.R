@@ -257,6 +257,70 @@ vertexAnova <- function(formula, data, subset=NULL, column=1) {
 }
 
 
+#' Performs ANOVA on each vertex point specified 
+#' @param formula a model formula
+#' @param data a data.frame containing variables in formula 
+#' @param subset rows to be used, by default all are used
+#' @return Returns an array with the F-statistic for each model specified by formula with the following attributes: 
+#' \itemize{
+#' \item{model}{ design matrix}
+#' \item{filenames}{ minc file names input}
+#' \item{dimensions}{ dimensions of the statistics matrix}
+#' \item{dimnames}{ names of the dimensions for the statistic matrix}
+#' \item{stat-type}{ types of statistic used}
+#' \item{df}{ degrees of freedom of each statistic}
+#' }
+#' @param column Which column to treat as the input from vertex files. 
+#' @seealso mincAnova,anatAnova 
+#' @examples 
+#' \dontrun{
+#' getRMINCTestData() 
+#' gf = read.csv("/tmp/rminctestdata/CIVET_TEST.csv")
+#' gf = civet.getAllFilenames(gf,"ID","TEST","/tmp/rminctestdata/CIVET","TRUE","1.1.12")
+#' gf = civet.readAllCivetFiles("/tmp/rminctestdata/AAL.csv",gf)
+#' result = vertexAnova(CIVETFILES$nativeRMStlink20mmleft~Primary.Diagnosis,gf)
+#' }
+#' @export 
+vertexAnova_wts <- function(formula, data, subset=NULL, column=1, weights=NULL) {
+  # Create Model
+  mf <- match.call(expand.dots=FALSE)
+  m <- match(c("formula", "data", "subset", "weights"), names(mf), 0)
+  mf <- mf[c(1, m)]
+  mf$drop.unused.levels <- TRUE
+  mf[[1]] <- as.name("model.frame")
+  mf <- eval(mf, parent.frame())
+  mmatrix <- model.matrix(formula, mf)
+  
+  # Load Vertex Data from Files
+  filenames <- as.character(mf[,1])
+  data.matrix <- vertexTable(filenames, column=column)
+  result <- .Call("vertex_anova_loop", data.matrix, mmatrix,attr(mmatrix, "assign"), PACKAGE="RMINC");
+  
+  attr(result, "model") <- as.matrix(mmatrix)
+  attr(result, "filenames") <- filenames
+  attr(result, "stat-type") <- rep("F", ncol(result))
+  
+  # Use the first voxel in order to get the dimension names
+  v.firstVoxel <- data.matrix[1,]
+  
+  # Get the degrees of freedom
+  l <- lm.fit(mmatrix, v.firstVoxel)
+  asgn <- l$assign[l$qr$pivot]
+  dfr <- df.residual(l)
+  dfs <- c(unlist(lapply(split(asgn, asgn), length)))
+  dflist <- vector("list", ncol(result))
+  for (i in 1:ncol(result)) {
+    dflist[[i]] <- c(dfs[[i + 1]], dfr)
+  }
+  attr(result, "df") <- dflist
+  
+  colnames(result) <- attr(terms(formula), "term.labels")
+  
+  class(result) <- c("vertexMultiDim", "matrix")
+  return(result)
+}
+
+
 #' Calculates statistics and coefficients for linear model of specified vertex files
 #' @param formula a model formula. The RHS of the formula may contain one term with filenames. If
 #' so only the + operator may be used, and only two terms may appear on the RHS
